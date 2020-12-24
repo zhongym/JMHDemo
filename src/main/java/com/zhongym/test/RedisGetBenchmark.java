@@ -1,10 +1,15 @@
 package com.zhongym.test;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+import com.zhongym.test.vo.PointsPriceVO;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,33 +21,34 @@ import java.util.stream.Collectors;
 // SampleTime: 随机取样，最后输出取样结果的分布，例如“99%的调用在xxx毫秒以内，99.99%的调用在xxx毫秒以内”
 // SingleShotTime: 以上模式都是默认一次 iteration 是 1s，唯有 SingleShotTime 是只运行一次。往往同时把 warmup 次数设为0，用于测试冷启动时的性能。
 @BenchmarkMode(Mode.Throughput)//基准测试类型
-@OutputTimeUnit(TimeUnit.MILLISECONDS)//基准测试结果的时间类型
+@OutputTimeUnit(TimeUnit.SECONDS)//基准测试结果的时间类型
 @Threads(2)//测试线程数量
 @State(Scope.Thread)//该状态为每个线程独享
 @Warmup(iterations = 1)//预热的迭代次数
 //度量:iterations进行测试的轮次，time每轮进行的时长，timeUnit时长单位,batchSize批次数量
 @Measurement(iterations = 10)
-public class InstructionsBenchmark {
-    public Integer v;
+public class RedisGetBenchmark {
 
-    public Integer getV() {
-        return v;
-    }
-
-    static List<InstructionsBenchmark> longList;
-    private static final int len = 100000000;
+    private static JedisPool jedis;
 
     static {
-        longList = new ArrayList<>(len);
-        for (int i = 0; i < len; i++) {
-            longList.add(new InstructionsBenchmark());
+        jedis = new JedisPool("192.168.2.33", 6379);
+//        Jedis resource = jedis.getResource();
+        long s = System.currentTimeMillis();
+        try (Jedis resource = jedis.getResource()) {
+            String v = resource.get("marketing:points:price:config_test");
+            PointsPriceVO object = JSON.parseObject(v, PointsPriceVO.class);
+            System.out.println(object);
         }
+        long e = System.currentTimeMillis();
+        System.out.println("----------"+(e - s));
+
     }
 
     //run
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
-                .include(InstructionsBenchmark.class.getSimpleName())
+                .include(RedisGetBenchmark.class.getSimpleName())
                 .forks(1)
                 //     使用之前要安装hsdis
                 //-XX:-TieredCompilation 关闭分层优化 -server
@@ -67,19 +73,12 @@ public class InstructionsBenchmark {
 
     //空循环 对照项
     @Benchmark
-    public void forDemo() {
-        List<Integer> arr = new ArrayList<>();
-        for (InstructionsBenchmark benchmark : longList) {
-            arr.add(benchmark.getV());
+    public void getString() {
+        try (Jedis resource = jedis.getResource()) {
+            String v = resource.get("marketing:points:price:config_test");
+            PointsPriceVO object = JSON.parseObject(v, PointsPriceVO.class);
         }
     }
-
-    @Benchmark
-    public void stream() {
-        List<Integer> collect = longList.stream().map(InstructionsBenchmark::getV).collect(Collectors.toList());
-    }
-
-
 
 
 }
